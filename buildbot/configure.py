@@ -43,6 +43,7 @@ def do_configure(args):
     fusion_dir = os.path.join(abs_src_dir, "sycl-fusion")
     llvm_targets_to_build = args.host_target
     llvm_enable_projects = 'clang;' + llvm_external_projects
+    llvm_enable_projects += ';cir'
     libclc_targets_to_build = ''
     libclc_gen_remangled_variants = 'OFF'
     sycl_build_pi_hip_platform = 'AMD'
