@@ -34,6 +34,7 @@ enum {
   /// with typical C calling conventions, the callee/caller have to tolerate
   /// certain amounts of prototype mismatch.
   C = 0,
+  SPIR_KERNEL = 1,
 };
 
 } // namespace CallingConv

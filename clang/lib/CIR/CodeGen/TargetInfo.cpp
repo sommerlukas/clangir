@@ -73,6 +73,146 @@ public:
 
 } // namespace
 
+//===----------------------------------------------------------------------===//
+// Default ABI Implementation
+//===----------------------------------------------------------------------===//
+
+/// Pass transparent unions as if they were the type of the first element. Sema
+/// should ensure that all elements of the union have the same "machine type".
+static QualType useFirstFieldIfTransparentUnion(QualType Ty) {
+  assert(!Ty->getAsUnionType() && "NYI");
+  return Ty;
+}
+
+static bool isAggregateTypeForABI(QualType T) {
+  return !CIRGenFunction::hasScalarEvaluationKind(T) ||
+         T->isMemberFunctionPointerType();
+}
+
+static CIRGenCXXABI::RecordArgABI getRecordArgABI(const RecordType *RT,
+                                                  CIRGenCXXABI &CXXABI) {
+  const CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(RT->getDecl());
+  if (!RD) {
+    if (!RT->getDecl()->canPassInRegisters())
+      return CIRGenCXXABI::RecordArgABI::Indirect;
+    return CIRGenCXXABI::RecordArgABI::Default;
+  }
+  return CXXABI.getRecordArgABI(RD);
+}
+
+static CIRGenCXXABI::RecordArgABI getRecordArgABI(QualType T,
+                                                  CIRGenCXXABI &CXXABI) {
+  const RecordType *RT = T->getAs<RecordType>();
+  if (!RT)
+    return CIRGenCXXABI::RecordArgABI::Default;
+  return getRecordArgABI(RT, CXXABI);
+}
+
+namespace {
+
+class DefaultABIInfo : public ABIInfo {
+
+public:
+  DefaultABIInfo(CIRGenTypes &CGT) : ABIInfo(CGT) {}
+
+  void computeInfo(CIRGenFunctionInfo &FI) const override {
+    if (!getCXXABI().classifyReturnType(FI))
+      FI.getReturnInfo() = classifyReturnType(FI.getReturnType());
+    for (auto &I : FI.arguments())
+      I.info = classifyArgumentType(I.type);
+  }
+
+  ABIArgInfo classifyReturnType(QualType RetTy) const {
+    if (RetTy->isVoidType())
+      return ABIArgInfo::getIgnore();
+
+    if (isAggregateTypeForABI(RetTy))
+      return getNaturalAlignIndirect(RetTy);
+
+    // Treat an enum type as its underlying type.
+    if (const EnumType *EnumTy = RetTy->getAs<EnumType>())
+      RetTy = EnumTy->getDecl()->getIntegerType();
+
+    if (const auto *EIT = RetTy->getAs<BitIntType>())
+      if (EIT->getNumBits() >
+          getContext().getTypeSize(getContext().getTargetInfo().hasInt128Type()
+                                       ? getContext().Int128Ty
+                                       : getContext().LongLongTy))
+        return getNaturalAlignIndirect(RetTy);
+
+    return (isPromotableIntegerTypeForABI(RetTy) ? ABIArgInfo::getExtend(RetTy)
+                                                 : ABIArgInfo::getDirect());
+  }
+
+  ABIArgInfo classifyArgumentType(QualType ArgTy) const {
+    auto Ty = useFirstFieldIfTransparentUnion(ArgTy);
+
+    if (isAggregateTypeForABI(Ty)) {
+      // Records with non-trivial destructors/copy-constructors should not be
+      // passed by value.
+      CIRGenCXXABI::RecordArgABI RAA = getRecordArgABI(Ty, getCXXABI());
+      if (RAA != CIRGenCXXABI::RecordArgABI::Default)
+        return getNaturalAlignIndirect(
+            Ty, RAA == CIRGenCXXABI::RecordArgABI::DirectInMemory);
+
+      return getNaturalAlignIndirect(Ty);
+    }
+
+    // Treat an enum type as its underlying type.
+    if (const EnumType *EnumTy = Ty->getAs<EnumType>())
+      Ty = EnumTy->getDecl()->getIntegerType();
+
+    ASTContext &Context = getContext();
+    if (const auto *EIT = Ty->getAs<BitIntType>())
+      if (EIT->getNumBits() >
+          Context.getTypeSize(Context.getTargetInfo().hasInt128Type()
+                                  ? Context.Int128Ty
+                                  : Context.LongLongTy))
+        return getNaturalAlignIndirect(Ty);
+
+    return (isPromotableIntegerTypeForABI(Ty) ? ABIArgInfo::getExtend(Ty)
+                                              : ABIArgInfo::getDirect());
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// SPIR-V ABI Implementation
+//===----------------------------------------------------------------------===//
+
+class SPIRVABIInfo : public DefaultABIInfo {
+
+public:
+  SPIRVABIInfo(CIRGenTypes &CGT) : DefaultABIInfo(CGT) {}
+
+  void computeInfo(CIRGenFunctionInfo &FI) const override {
+    cir::CallingConv::ID CC = FI.getCallingConvention();
+    if (!getCXXABI().classifyReturnType(FI))
+      FI.getReturnInfo() = classifyReturnType(FI.getReturnType());
+
+    for (auto &I : FI.arguments()) {
+      if (CC == cir::CallingConv::SPIR_KERNEL)
+        I.info = classifyKernelArgumentType(I.type);
+      else
+        I.info = classifyArgumentType(I.type);
+    }
+  }
+
+private:
+  ABIArgInfo classifyKernelArgumentType(QualType Ty) const {
+    assert(!getContext().getLangOpts().CUDAIsDevice && "NYI");
+
+    return classifyArgumentType(Ty);
+  }
+};
+
+class SPIRVTargetCIRGenInfo : public TargetCIRGenInfo {
+public:
+  SPIRVTargetCIRGenInfo(CIRGenTypes &CGT)
+      : TargetCIRGenInfo(std::make_unique<SPIRVABIInfo>(CGT)) {}
+};
+
+} // namespace
+
 namespace {
 
 /// The AVX ABI leel for X86 targets.
@@ -197,13 +337,6 @@ void X86_64ABIInfo::computeInfo(CIRGenFunctionInfo &FI) const {
     FI.getReturnInfo() = ABIArgInfo::getDirect(CGT.ConvertType(RetTy));
 }
 
-/// Pass transparent unions as if they were the type of the first element. Sema
-/// should ensure that all elements of the union have the same "machine type".
-static QualType useFirstFieldIfTransparentUnion(QualType Ty) {
-  assert(!Ty->getAsUnionType() && "NYI");
-  return Ty;
-}
-
 /// GetINTEGERTypeAtOffset - The ABI specifies that a value should be passed in
 /// an 8-byte GPR. This means that we either have a scalar or we are talking
 /// about the high or low part of an up-to-16-byte struct. This routine picks
@@ -302,6 +435,12 @@ bool ABIInfo::isPromotableIntegerTypeForABI(QualType Ty) const {
   assert(!Ty->getAs<BitIntType>() && "NYI");
 
   return false;
+}
+
+ABIArgInfo ABIInfo::getNaturalAlignIndirect(QualType Ty, bool ByVal,
+                                            bool Realign) const {
+  return ABIArgInfo::getIndirect(getContext().getTypeAlignInChars(Ty), ByVal,
+                                 Realign, /* Padding */ nullptr);
 }
 
 void X86_64ABIInfo::classify(QualType Ty, uint64_t OffsetBase, Class &Lo,
@@ -455,6 +594,11 @@ const TargetCIRGenInfo &CIRGenModule::getTargetCIRGenInfo() {
     case llvm::Triple::Linux:
       return SetCIRGenInfo(new X86_64TargetCIRGenInfo(genTypes, AVXLevel));
     }
+  }
+
+  case llvm::Triple::spir64: {
+    // FIXME: Logic to detect only valid SPIR-V cases.
+    return SetCIRGenInfo(new SPIRVTargetCIRGenInfo(genTypes));
   }
   }
 }

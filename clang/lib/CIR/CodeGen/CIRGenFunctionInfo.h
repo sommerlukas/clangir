@@ -161,6 +161,14 @@ public:
     return getZeroExtend(Ty, T);
   }
 
+  static ABIArgInfo getIndirect(clang::CharUnits Alignment, bool ByVal = true,
+                                bool Realign = false,
+                                mlir::Type Padding = nullptr) {
+    auto AI = ABIArgInfo(Indirect);
+    // FIXME: Need to add more fields and set them here.
+    return AI;
+  }
+
   static ABIArgInfo getIgnore() { return ABIArgInfo(Ignore); }
 
   Kind getKind() const { return TheKind; }

@@ -38,6 +38,13 @@ public:
   // Implement the Type::IsPromotableIntegerType for ABI specific needs. The
   // only difference is that this consideres bit-precise integer types as well.
   bool isPromotableIntegerTypeForABI(clang::QualType Ty) const;
+
+  /// A convenience method to return an indirect ABIArgInfo with an
+  /// expected alignment equal to the ABI alignment of the given type.
+  // FIXME: Clang version of this function supports an additional padding
+  // parameter.
+  ABIArgInfo getNaturalAlignIndirect(clang::QualType Ty, bool ByVal = true,
+                                     bool Realign = false) const;
 };
 
 } // namespace cir
