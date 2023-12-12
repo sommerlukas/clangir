@@ -156,6 +156,8 @@ void ClangToCIRArgMapping::construct(const ASTContext &Context,
     switch (AI.getKind()) {
     default:
       llvm_unreachable("NYI");
+    case ABIArgInfo::Indirect: 
+      llvm_unreachable("Indirect not yet implemented");
     case ABIArgInfo::Extend:
     case ABIArgInfo::Direct: {
       // Postpone splitting structs into elements since this makes it way

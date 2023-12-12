@@ -1223,6 +1223,11 @@ void CIRGenModule::buildTopLevelDecl(Decl *decl) {
     buildGlobal(cast<FunctionDecl>(decl));
     assert(!codeGenOpts.CoverageMapping && "Coverage Mapping NYI");
     break;
+
+  case Decl::CXXDeductionGuide:
+    // Function-like, but does not result in code emission.
+    break;
+
   // C++ Decls
   case Decl::Namespace:
     buildDeclContext(cast<NamespaceDecl>(decl));
@@ -1412,6 +1417,7 @@ mlir::SymbolTable::Visibility CIRGenModule::getMLIRVisibilityFromCIRLinkage(
   case mlir::cir::GlobalLinkageKind::ExternalWeakLinkage:
   case mlir::cir::GlobalLinkageKind::LinkOnceODRLinkage:
   case mlir::cir::GlobalLinkageKind::AvailableExternallyLinkage:
+  case mlir::cir::GlobalLinkageKind::WeakODRLinkage:
     return mlir::SymbolTable::Visibility::Public;
   default: {
     llvm::errs() << "visibility not implemented for '"
@@ -1697,7 +1703,9 @@ static std::string getMangledNameImpl(CIRGenModule &CGM, GlobalDecl GD,
   if (const auto *FD = dyn_cast<FunctionDecl>(ND)) {
     assert(!FD->isMultiVersion() && "NYI");
   }
-  assert(!CGM.getLangOpts().GPURelocatableDeviceCode && "NYI");
+  assert((!CGM.getLangOpts().GPURelocatableDeviceCode ||
+          CGM.getLangOpts().SYCLIsDevice) &&
+         "NYI");
 
   return std::string(Out.str());
 }

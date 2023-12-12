@@ -22,8 +22,17 @@ using namespace clang;
 using namespace cir;
 
 unsigned CIRGenTypes::ClangCallConvToCIRCallConv(clang::CallingConv CC) {
-  assert(CC == CC_C && "No other calling conventions implemented.");
-  return cir::CallingConv::C;
+  switch (CC) {
+  case clang::CallingConv::CC_C:
+    return cir::CallingConv::C;
+  case clang::CallingConv::CC_SpirFunction:
+  case clang::CallingConv::CC_OpenCLKernel:
+    return cir::CallingConv::SPIR_KERNEL;
+  default: {
+    llvm::dbgs() << "Calling convention: " << CC << "\n";
+    assert(false && "Calling convention not yet implemented");
+  }
+  }
 }
 
 CIRGenTypes::CIRGenTypes(CIRGenModule &cgm)
@@ -733,7 +742,7 @@ const CIRGenFunctionInfo &CIRGenTypes::arrangeCIRFunctionInfo(
   assert(inserted && "Recursively being processed?");
 
   // Compute ABI inforamtion.
-  assert(info.getCC() != clang::CallingConv::CC_SpirFunction && "NYI");
+  //assert(info.getCC() != clang::CallingConv::CC_SpirFunction && "NYI");
   assert(info.getCC() != CC_Swift && info.getCC() != CC_SwiftAsync &&
          "Swift NYI");
   getABIInfo().computeInfo(*FI);

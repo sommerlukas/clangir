@@ -1352,8 +1352,11 @@ mlir::Value ScalarExprEmitter::VisitCastExpr(CastExpr *CE) {
     return CGF.getBuilder().createBitcast(CGF.getLoc(E->getSourceRange()), Src,
                                           DstTy);
   }
-  case CK_AddressSpaceConversion:
-    llvm_unreachable("NYI");
+  case CK_AddressSpaceConversion: {
+    // FIXME: This is a temporary hack while CIR does not yet support address
+    // spaces on pointers.
+    return Visit(const_cast<Expr *>(E));
+  }
   case CK_AtomicToNonAtomic:
     llvm_unreachable("NYI");
   case CK_NonAtomicToAtomic:
