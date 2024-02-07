@@ -1592,6 +1592,8 @@ public:
                          bool IsInitializer);
   void buildAnyExprToExn(const Expr *E, Address Addr);
 
+  LValue buildExtVectorElementExpr(const ExtVectorElementExpr *E);
+
   LValue buildCheckedLValue(const Expr *E, TypeCheckKind TCK);
   LValue buildMemberExpr(const MemberExpr *E);
 

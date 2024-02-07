@@ -1735,6 +1735,48 @@ bool CIRGenFunction::isWrappedCXXThis(const Expr *Obj) {
   return true;
 }
 
+LValue
+CIRGenFunction::buildExtVectorElementExpr(const ExtVectorElementExpr *E) {
+  // Emit the base vector as an l-value.
+  LValue Base;
+
+  // ExtVectorElementExpr's base can either be a vector or a pointer to vector.
+  if (E->isArrow()) {
+    // If it is a pointer to vector, emit the address and form an lvalue with
+    // it.
+    LValueBaseInfo BaseInfo;
+    Address Ptr = buildPointerWithAlignment(E->getBase(), &BaseInfo);
+    const auto *PT = E->getBase()->getType()->castAs<clang::PointerType>();
+    Base = makeAddrLValue(Ptr, PT->getPointeeType(), BaseInfo);
+    Base.getQuals().removeObjCGCAttr();
+  } else if (E->getBase()->isGLValue()) {
+    // Otherwise, if the base is an lvalue (as in the case of foo.x.x), emit the
+    // base as an lvalue
+    assert(E->getBase()->getType()->isVectorType());
+    Base = buildLValue(E->getBase());
+  } else {
+    // Otherwise, the base is a normal rvalue (as in (V+V).x), emit it as such.
+    assert(E->getBase()->getType()->isVectorType() &&
+           "Result must be a vector");
+    mlir::Value Vec = buildScalarExpr(E->getBase());
+
+    // Store the vector memory (because the lvalue wants an address).
+    mlir::Location Loc = CGM.getLoc(E->getExprLoc());
+    Address VecMem = CreateMemTemp(E->getBase()->getType(), Loc);
+    builder.createStore(Loc, Vec, VecMem);
+  }
+
+  QualType type = E->getType().withCVRQualifiers(Base.getQuals().getCVRQualifiers());
+
+  // Encode the element access list into a vector of unsigned indices.
+  SmallVector<uint32_t, 4> Indices;
+  E->getEncodedElementAccess(Indices);
+
+  if(Base.isSimple()) {
+    // TODO
+  } 
+}
+
 LValue CIRGenFunction::buildMemberExpr(const MemberExpr *E) {
   if (DeclRefExpr *DRE = tryToConvertMemberExprToDeclRefExpr(*this, E)) {
     buildIgnoredExpr(E->getBase());

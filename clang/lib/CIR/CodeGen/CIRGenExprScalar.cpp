@@ -265,6 +265,9 @@ public:
   mlir::Value VisitConvertVectorExpr(ConvertVectorExpr *E) {
     llvm_unreachable("NYI");
   }
+  mlir::Value VisitExtVectorElementExpr(Expr *E) {
+    return buildLoadOfLValue(E);
+  }
   mlir::Value VisitMemberExpr(MemberExpr *E);
   mlir::Value VisitExtVectorelementExpr(Expr *E) { llvm_unreachable("NYI"); }
   mlir::Value VisitCompoundLiteralEpxr(CompoundLiteralExpr *E) {
