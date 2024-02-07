@@ -51,7 +51,7 @@ RValue CIRGenFunction::buildBuiltinExpr(const GlobalDecl GD, unsigned BuiltinID,
   // TODO: Extend this handling to all builtin calls that we can constant-fold.
   Expr::EvalResult Result;
   if (E->isPRValue() && E->EvaluateAsRValue(Result, CGM.getASTContext()) &&
-      !Result.hasSideEffects()) {
+      !Result.hasSideEffects() && BuiltinID != Builtin::BI__builtin_assume) {
     llvm_unreachable("NYI");
   }
 
@@ -384,6 +384,9 @@ RValue CIRGenFunction::buildBuiltinExpr(const GlobalDecl GD, unsigned BuiltinID,
 
   case Builtin::BI__fastfail:
     llvm_unreachable("NYI");
+
+  case Builtin::BI__builtin_assume:
+    return RValue::get(nullptr);
 
   case Builtin::BI__builtin_coro_id:
   case Builtin::BI__builtin_coro_promise:
