@@ -116,62 +116,31 @@ public:
   DefaultABIInfo(CIRGenTypes &CGT) : ABIInfo(CGT) {}
 
   void computeInfo(CIRGenFunctionInfo &FI) const override {
-    if (!getCXXABI().classifyReturnType(FI))
-      FI.getReturnInfo() = classifyReturnType(FI.getReturnType());
+    FI.getReturnInfo() = classifyReturnType(FI.getReturnType());
     for (auto &I : FI.arguments())
       I.info = classifyArgumentType(I.type);
   }
 
   ABIArgInfo classifyReturnType(QualType RetTy) const {
-    if (RetTy->isVoidType())
+    // Top level CIR has unlimited arguments and return types. Lowering for ABI
+    // specific concerns should happen during a lowering phase. Assume
+    // everything is direct for now.
+    if (testIfIsVoidTy(RetTy))
       return ABIArgInfo::getIgnore();
 
-    if (isAggregateTypeForABI(RetTy))
-      return getNaturalAlignIndirect(RetTy);
-
-    // Treat an enum type as its underlying type.
-    if (const EnumType *EnumTy = RetTy->getAs<EnumType>())
-      RetTy = EnumTy->getDecl()->getIntegerType();
-
-    if (const auto *EIT = RetTy->getAs<BitIntType>())
-      if (EIT->getNumBits() >
-          getContext().getTypeSize(getContext().getTargetInfo().hasInt128Type()
-                                       ? getContext().Int128Ty
-                                       : getContext().LongLongTy))
-        return getNaturalAlignIndirect(RetTy);
-
-    return (isPromotableIntegerTypeForABI(RetTy) ? ABIArgInfo::getExtend(RetTy)
-                                                 : ABIArgInfo::getDirect());
+    return ABIArgInfo::getDirect(CGT.ConvertType(RetTy));
   }
 
   ABIArgInfo classifyArgumentType(QualType ArgTy) const {
     auto Ty = useFirstFieldIfTransparentUnion(ArgTy);
 
-    if (isAggregateTypeForABI(Ty)) {
-      // Records with non-trivial destructors/copy-constructors should not be
-      // passed by value.
-      CIRGenCXXABI::RecordArgABI RAA = getRecordArgABI(Ty, getCXXABI());
-      if (RAA != CIRGenCXXABI::RecordArgABI::Default)
-        return getNaturalAlignIndirect(
-            Ty, RAA == CIRGenCXXABI::RecordArgABI::DirectInMemory);
+    // Top level CIR has unlimited arguments and return types. Lowering for ABI
+    // specific concerns should happen during a lowering phase. Assume
+    // everything is direct for now.
+    if (testIfIsVoidTy(Ty))
+      return ABIArgInfo::getIgnore();
 
-      return getNaturalAlignIndirect(Ty);
-    }
-
-    // Treat an enum type as its underlying type.
-    if (const EnumType *EnumTy = Ty->getAs<EnumType>())
-      Ty = EnumTy->getDecl()->getIntegerType();
-
-    ASTContext &Context = getContext();
-    if (const auto *EIT = Ty->getAs<BitIntType>())
-      if (EIT->getNumBits() >
-          Context.getTypeSize(Context.getTargetInfo().hasInt128Type()
-                                  ? Context.Int128Ty
-                                  : Context.LongLongTy))
-        return getNaturalAlignIndirect(Ty);
-
-    return (isPromotableIntegerTypeForABI(Ty) ? ABIArgInfo::getExtend(Ty)
-                                              : ABIArgInfo::getDirect());
+    return ABIArgInfo::getDirect(CGT.ConvertType(Ty));
   }
 };
 
@@ -186,8 +155,7 @@ public:
 
   void computeInfo(CIRGenFunctionInfo &FI) const override {
     cir::CallingConv::ID CC = FI.getCallingConvention();
-    if (!getCXXABI().classifyReturnType(FI))
-      FI.getReturnInfo() = classifyReturnType(FI.getReturnType());
+    FI.getReturnInfo() = classifyReturnType(FI.getReturnType());
 
     for (auto &I : FI.arguments()) {
       if (CC == cir::CallingConv::SPIR_KERNEL)
